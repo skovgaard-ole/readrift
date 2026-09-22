@@ -20,13 +20,14 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from readrift.inputs.btop import OUTFMT
 from readrift.params import OPTIONS, ExtractSpec, Params
 
 #: Words that are treated as a subcommand when they appear first.  A reference
 #: file is never called this, so the ambiguity is theoretical.
 SUBCOMMANDS = frozenset({"browse"})
 
-_EPILOG = """\
+_EPILOG = f"""\
 examples:
   readrift ref.gb reads.btop
   readrift ref.fa reads.btop -r 4000 -m 1000 -x 20
@@ -41,9 +42,13 @@ Every run also writes <prefix>.readriftdb.npz, the cache the interactive browser
 reads.  Open it with:
   readrift browse result.readriftdb.npz
 
-The BTOP file comes from BLAST with this exact -outfmt:
-  blastn -db blastdb -query all_reads.fa -out reads.btop \\
-    -outfmt '6 delim=\\t qseqid sframe qstart qend sstart send qlen sseqid btop'
+The BTOP file is made by NCBI BLAST+, which ReadRift needs but does not
+install or run -- it reads the table BLAST writes:
+  makeblastdb -in ref.fa -dbtype nucl -out refdb
+  blastn -db refdb -query reads.fa -out reads.btop \\
+    -outfmt "{OUTFMT}"
+Copy the -outfmt string exactly. Do not add delim=\\t: tab is already BLAST's
+separator, and BLAST would write the two characters \\t between the columns.
 """
 
 _BROWSE_EPILOG = """\

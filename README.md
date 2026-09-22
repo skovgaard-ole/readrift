@@ -17,9 +17,18 @@ from that original.
 
 ## Install
 
-Requires **Python 3.10 or newer**. The only dependencies are matplotlib and
-numpy, and `pip` fetches both. There is **no Ghostscript, no BLAST and no
-compiler** in the picture — the PDF is written directly, and nothing shells out.
+ReadRift needs two things, and `pip` installs only the first:
+
+| | For | Installed by |
+|---|---|---|
+| **Python 3.10+**, with matplotlib and numpy | running ReadRift | `pip`, below |
+| **NCBI BLAST+**: `makeblastdb` and `blastn` | making ReadRift's input, the BTOP file | you, see [Install BLAST+](#install-blast) |
+
+ReadRift never runs BLAST itself; it reads the table BLAST writes. So BLAST+ is
+not a Python dependency, but without it you have no input for ReadRift. Nothing
+else is needed: no Ghostscript and no compiler, because the PDF is written directly.
+
+### Install ReadRift
 
 Get the code, then pick the line for your platform:
 
@@ -57,7 +66,7 @@ To run the checks as well, install the development extras and use them:
 
 ```bash
 pip install -e ".[dev]"
-python -m pytest        # 44 tests, about ten seconds
+python -m pytest        # about ten seconds
 python -m ruff check .
 ```
 
@@ -68,19 +77,68 @@ Python 3.10–3.13.
 > scripts. `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once, in a
 > normal (non-admin) PowerShell, fixes it for good.
 
+### Install BLAST+
+
+From NCBI's [BLAST+ download page](https://ftp.ncbi.nlm.nih.gov/blast/executables/blast+/LATEST/),
+or a package manager:
+
+| Platform | Install |
+|---|---|
+| Windows | run `ncbi-blast-<version>+-win64.exe` from that page, then open a new terminal so `blastn` is on the PATH |
+| macOS | the `.dmg` from that page, or `brew install blast` |
+| Linux | `sudo apt install ncbi-blast+` on Debian/Ubuntu, or the `x64-linux.tar.gz` from that page |
+| conda | `conda install -c bioconda blast`, on Linux and macOS only, because Bioconda has no Windows builds |
+
+Check it with `blastn -version`. ReadRift's input format was verified against
+BLAST+ 2.13.0.
+
 ## Use
+
+There are two steps: BLAST+ aligns the reads to the reference, then ReadRift
+classifies the alignments and draws them.
+
+### 1. Align the reads with BLAST+
+
+```bash
+makeblastdb -in reference.fa -dbtype nucl -out refdb
+```
+
+```bash
+blastn -db refdb -query reads.fa -out reads.btop -outfmt "6 qseqid sframe qstart qend sstart send qlen sseqid btop"
+```
+
+**Copy the `-outfmt` string exactly.** ReadRift reads those columns, in that
+order, separated by tabs. The last one, `btop`, is optional; it's only needed
+for `--identity`. The line works as written in bash, PowerShell and `cmd.exe`.
+
+- **Don't add `delim=\t`.** Tab is already BLAST's separator for this format,
+  and BLAST doesn't interpret the escape: it writes the two characters `\t`
+  between the columns, and ReadRift can't read a single line of the result.
+- **Build the database from the same sequences you give ReadRift.**
+  `makeblastdb` reads only FASTA, so if your reference is GenBank, download the
+  same accessions as FASTA as well. ReadRift matches the accessions BLAST writes
+  against the reference; a version suffix (`AP027142` or `AP027142.1`) doesn't
+  matter.
+- **The reads must be FASTA.** Convert FASTQ first, for example with
+  `seqtk seq -a reads.fastq > reads.fa`.
+- **Keep spaces out of the database's path.** `makeblastdb` and `blastn` both
+  cut `-out` and `-db` at the first space. On Windows that includes a folder
+  under a user name like `C:\Users\Ole Skovgaard\`.
+- **Leave the output as BLAST wrote it.** All the lines for one read must stay
+  together, so don't sort the file. Gzipping it (`reads.btop.gz`) is fine. A
+  **tar** archive isn't: ReadRift would read the archive's headers, and every
+  other file inside it, as alignment lines.
+
+If ReadRift can't read a single line of the file, it stops with an error that
+says why, instead of drawing an empty map.
+
+### 2. Run ReadRift
 
 ```bash
 python -m readrift AP027148.gb DRR325755.btop -x 10
 ```
 
 Produces `DRR325755.pdf`.
-
-The BTOP file comes from BLAST with this exact `-outfmt`:
-
-```bash
-blastn -db blastdb -query all_reads.fa -out reads.btop -outfmt '6 delim=	 qseqid sframe qstart qend sstart send qlen sseqid btop'
-```
 
 The reference may be GenBank or FASTA; either may be gzipped. With GenBank,
 gene annotations are drawn under the axis and coloured by their likelihood of
@@ -95,12 +153,13 @@ fetched rather than cloned:
 
 | | |
 |---|---|
-| Reference | GenBank accession [`AP027148`](https://www.ncbi.nlm.nih.gov/nuccore/AP027148) → `AP027148.gb` |
-| Reads | Sequence Read Archive run `DRR325755`, e.g. `fasterq-dump DRR325755` from the SRA Toolkit |
+| Reference | the *Methylocystis iwaonis* SS37A-Re genome in one GenBank file, `AP027148.gb`: chromosome [`AP027142`](https://www.ncbi.nlm.nih.gov/nuccore/AP027142) and six plasmids, `AP027143`–`AP027148`, plus four short gene records of the same organism (16S rRNA, *pmoA*, *mmoX*, *mxaF*). `AP027148` on its own is only the smallest plasmid. |
+| Reads | Sequence Read Archive run `DRR325755`. `fasterq-dump DRR325755` from the SRA Toolkit gives FASTQ, which BLAST needs converted to FASTA. |
 
-Then align the reads against the reference with the `blastn -outfmt` above to
-produce the `.btop`. That alignment is the slow step, and it is BLAST's, not
-`readrift`'s.
+The data are from Kaise et al. (2023), *Int J Syst Evol Microbiol* 73(6);
+BioProject [PRJDB12481](https://www.ncbi.nlm.nih.gov/bioproject/PRJDB12481).
+
+Then run the two steps above. Aligning with BLAST is the slow step, not ReadRift.
 
 Point it at your own reference and reads instead and nothing changes — the two
 file names in the examples carry no special meaning.

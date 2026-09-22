@@ -181,6 +181,57 @@ def test_btop_rejects_wrong_outfmt() -> None:
         parse_line("r\tplus\t1\t100\t500\t600\t1000\tctgA\t100")
 
 
+# Byte for byte what BLAST+ 2.13.0 wrote for `-outfmt '6 delim=\t qseqid ...'`,
+# the command the old --help text gave: the escape is not interpreted, so the
+# "separator" is a backslash and a t.
+_LITERAL_BACKSLASH_T = "probe.1\\t1\\t1\\t3000\\t1001\\t4000\\t3000\\tCTG1.1\\t3000\n"
+
+
+def test_documented_outfmt_has_no_delim() -> None:
+    """The one -outfmt string ReadRift prints must not make BLAST write '\\t'."""
+    from readrift.cli import build_parser
+    from readrift.inputs.btop import OUTFMT
+
+    assert "delim" not in OUTFMT
+    assert OUTFMT.split()[1:] == [
+        "qseqid", "sframe", "qstart", "qend", "sstart", "send", "qlen", "sseqid", "btop",
+    ]
+    assert OUTFMT in build_parser().epilog
+
+
+def test_nothing_parsed_explains_literal_backslash_t(tmp_path: Path) -> None:
+    path = tmp_path / "delim.btop"
+    path.write_text(_LITERAL_BACKSLASH_T * 3, encoding="utf-8")
+    stats = BtopStats()
+    assert list(iter_read_groups(path, 0, stats)) == []
+
+    assert stats.nothing_parsed
+    why = stats.explain_nothing_parsed(path)
+    assert "delim=\\t" in why
+    assert "Leave delim= out" in why
+
+
+def test_nothing_parsed_explains_missing_outfmt(tmp_path: Path) -> None:
+    path = tmp_path / "pairwise.txt"
+    path.write_text("BLASTN 2.13.0+\n\n\nReference: Zheng Zhang ...\n", encoding="utf-8")
+    stats = BtopStats()
+    list(iter_read_groups(path, 0, stats))
+
+    assert stats.nothing_parsed
+    assert "without -outfmt" in stats.explain_nothing_parsed(path)
+
+
+def test_short_reads_are_not_nothing_parsed(tmp_path: Path) -> None:
+    """Every line dropped by --min-read-length still *parsed*: not a format error."""
+    path = tmp_path / "short.btop"
+    path.write_text("r\t1\t1\t100\t500\t600\t1000\tctgA\n", encoding="utf-8")
+    stats = BtopStats()
+    list(iter_read_groups(path, 10_000, stats))
+
+    assert stats.short_reads == 1
+    assert not stats.nothing_parsed
+
+
 def test_btop_trace_counts() -> None:
     trace = parse_btop("120AG45-T7A-")
     assert trace.matches == 172

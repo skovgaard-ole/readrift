@@ -27,14 +27,17 @@ Every normal run also writes a `.readriftdb.npz` cache so the browser never has 
 
 ### 1.1 Input record contract (BTOP columns)
 
-Produced by:
+Produced by NCBI BLAST+, which ReadRift requires but neither installs nor runs:
 
 ```bash
-blastn -db blastdb -query all_reads.fa -out reads.btop \
-  -outfmt '6 delim=<TAB> qseqid sframe qstart qend sstart send qlen sseqid btop'
+makeblastdb -in ref.fa -dbtype nucl -out refdb
+blastn -db refdb -query reads.fa -out reads.btop \
+  -outfmt "6 qseqid sframe qstart qend sstart send qlen sseqid btop"
 ```
 
-Parsed by `inputs/btop.py:parse_line`. Minimum 8 columns; extras past index 8 are ignored.
+The `-outfmt` string is `inputs/btop.py:OUTFMT`, and `--help` and the unparsable-file error below both print it from there. The string deliberately has no `delim=`. Tab is already BLAST's default separator for format 6, and BLAST does not interpret `delim=\t`: it writes the two characters `\` `t` between columns (checked against BLAST+ 2.13.0), so every line fails. Until this was corrected, `--help` printed exactly that command. `tests/test_inputs.py:test_documented_outfmt_has_no_delim` keeps the string and the help text in step.
+
+Parsed by `inputs/btop.py:parse_line`, which splits on tab and nothing else. Minimum 8 columns; extras past index 8 are ignored.
 
 | Idx | BLAST field | Meaning | Validation |
 |-----|-------------|---------|------------|
@@ -50,7 +53,7 @@ Parsed by `inputs/btop.py:parse_line`. Minimum 8 columns; extras past index 8 ar
 
 One read produces one or more lines (HSPs). Lines for the same read are expected to be **consecutive**, which is how BLAST writes them; grouping is by consecutive equal `qseqid`. A read name that reappears in a later block is counted in `BtopStats.out_of_order` and reported as a note, not silently merged.
 
-Malformed lines are counted and skipped, never fatal. Blank lines and `#` comments are ignored.
+Malformed lines are counted and skipped. Blank lines and `#` comments are ignored. A malformed line on its own is never fatal, but a file in which **no** line parses (or which has none) is. `BtopStats.nothing_parsed` is `malformed == lines`; after the stream is drained, `analyse` prints `BtopStats.explain_nothing_parsed()` and exits 2 (stage 6b, §3). The explanation recognises the two commonest mistakes from the first rejected line, which is kept in `BtopStats.first_malformed`: a literal `\t` means `delim=\t`, and a leading `BLAST` means BLAST's pairwise report, i.e. no `-outfmt`. Both messages end with the correct command. Before this check, such a file finished with exit 0 and an empty map, because the accession cross-check (stage 7) never saw an accession to fail on. Lines dropped by `--min-read-length` *were* parsed, so a file of short reads is not this case.
 
 ---
 
@@ -118,13 +121,14 @@ Stage by stage (`pipeline.py`):
 | 4 | Extraction index (only `-e`) | `readrift/extract.py:78` | the same iterator, indexing each `Hit` as it passes |
 | 5 | Classification | `readrift/classify.py:231` | lazy `Iterator[ReadGroup]` |
 | 6 | **Statistics — this is what drains 3–5** | `readrift/stats.py:186` | `(Stats, list[ReadGroup])` |
-| 7 | Accession cross-check | `readrift/pipeline.py:125` | exit code 2 if *no* accession resolved, unless `--allow-unknown-contigs` |
+| 6b | BTOP sanity check | `readrift/pipeline.py:126` | exit code 2 if no line of the file parsed, with the reason and the correct `-outfmt` (§1.1) |
+| 7 | Accession cross-check | `readrift/pipeline.py:134` | exit code 2 if *no* accession resolved, unless `--allow-unknown-contigs` |
 | 8 | Layout | `readrift/layout.py:296` | `dict[str, ContigLayout]`; lane overflow appended to `notes` |
 | 9 | PDF | `readrift/render/__init__.py:37` | `<out>.pdf` (skipped by `--no-pdf`) |
 | 10 | Analysis TSV | `readrift/report.py:51` | `<out>_Analysis.tsv` (only with `-a`) |
 | 11 | Read extraction | `readrift/extract.py:88` | `extract-reads-list_<contig>_<start>_<end>.txt` + `.fastq`/`.fasta` |
 | 12 | Browser cache | `readrift/browser/store.py:171` | `<out>.readriftdb.npz` (skipped by `--no-cache`) |
-| 13 | Console summary | `readrift/pipeline.py:268` | class counts, coverage, N50, notes, elapsed time |
+| 13 | Console summary | `readrift/pipeline.py:277` | class counts, coverage, N50, notes, elapsed time |
 
 Ordering constraints that matter:
 
@@ -134,7 +138,7 @@ Ordering constraints that matter:
 
 `pipeline.analyse(params) -> Analysis` is the whole expensive front half (`Reference`, `Stats`, `list[ReadGroup]`, `notes`, optional `ReadIndex`). Everything downstream — PDF, TSV, extraction, cache — derives from `Analysis` and nothing else, which is why `browse` can reuse it unchanged.
 
-`browse` (`readrift/pipeline.py:310`): with a cache path it goes straight to `BrowserStore.open`; with reference + BTOP it tries to reuse `<out>.readriftdb.npz`, checks `is_stale(params)`, rebuilds with a printed reason if needed (or unconditionally with `--rebuild`), then calls `browser.server.serve`. Stages 8–11 never run — `parse_browse_args` forces `no_pdf=True`.
+`browse` (`readrift/pipeline.py:319`): with a cache path it goes straight to `BrowserStore.open`; with reference + BTOP it tries to reuse `<out>.readriftdb.npz`, checks `is_stale(params)`, rebuilds with a printed reason if needed (or unconditionally with `--rebuild`), then calls `browser.server.serve`. Stages 8–11 never run — `parse_browse_args` forces `no_pdf=True`.
 
 ---
 
@@ -286,7 +290,7 @@ Consumers, both gated on `--identity`: `stats.collect` (per-read identity for fi
 | `reference.py` | dispatch | `sniff_format` (first non-blank line: `>` → fa, `LOCUS` → gb, anything else → `SystemExit` quoting the line), `load_reference` → `Reference` |
 | `fasta.py` | FASTA | `(list[Contig], Metadata, aliases)` |
 | `genbank.py` | GenBank | `(list[Contig], list[Annotation], Metadata, aliases)` |
-| `btop.py` | BTOP | `Iterator[list[Hit]]` + `BtopStats` |
+| `btop.py` | BTOP | `Iterator[list[Hit]]` + `BtopStats`; `OUTFMT`, the one `-outfmt` string (§1.1) |
 | `reads.py` | FASTA/FASTQ | `Iterator[(read_id, verbatim record text)]` |
 
 Gzip is handled in-process by suffix (`.gz` → `gzip.open(..., "rt")`) in every one of them; no subprocess, no `seek`.
@@ -617,7 +621,7 @@ Derived properties: `axis_width`, `page_width`, `page_height`, `k_max`, `divisio
 | `<out>_Analysis.tsv` | with `-a` |
 | `extract-reads-list_<contig>_<start>_<end>.txt` / `.fastq`/`.fasta` | with `-e` |
 
-Exit codes: `0` success, `1` PDF not writable / browser startup failure, `2` no BTOP accession matched the reference.
+Exit codes: `0` success, `1` PDF not writable / browser startup failure, `2` the inputs do not fit together: no line of the BTOP file parsed, or no BTOP accession matched the reference.
 
 ---
 
@@ -636,8 +640,8 @@ Everything is generated into `tmp_path` — nothing is checked in — so the exp
 | Module | Covers | Locks in |
 |---|---|---|
 | `test_classify.py` | `classify`, `inputs.btop`, `inputs.reference`, `labels` | the full read → (class, junction, inverted) map; dropped reads and the unknown-accession report; class totals (4 / 2 / 4, one inverted); names never rewritten and unmatched labels reported; unique labels; competing HSPs dropped; `select_non_overlapping` matching a naive per-base implementation over 2 000 random cases; **the fold-back rule** — the real 9-HSP artefact read collapsing to one `UNDIVIDED` hit, `--keep-fold-back` restoring all nine, and the three shapes it must *not* touch (a genuine inversion over fresh reference, a same-strand tandem duplication, a breakpoint sharing less than half its span with an inverted repeat); GenBank and FASTA classifying identically |
-| `test_inputs.py` | `inputs.{fasta,genbank,reference,btop,reads}`, `btop_trace` | FASTA lengths and ambiguity codes; four accession-header forms; GenBank lengths, metadata, versioned-accession resolution and feature groups; BTOP grouping by real read name; the optional trace column; rejection of a wrong `-outfmt`; trace counts and identity; read extraction from plain and gzipped FASTQ |
-| `test_layout_and_output.py` | `layout`, `stats`, `pipeline` end-to-end | page splitting across one, two and four pages; lanes never overlapping; a contig-joining read drawn on both contigs; overflow instead of a crash when lanes run out; coverage counting matched bases only; class fractions summing to 100; a full run writing a valid PDF and a uniform-width TSV; a run against GenBank; `-e` writing a populated list plus sequences; exit code 2 for a total accession mismatch |
+| `test_inputs.py` | `inputs.{fasta,genbank,reference,btop,reads}`, `btop_trace` | FASTA lengths and ambiguity codes; four accession-header forms; GenBank lengths, metadata, versioned-accession resolution and feature groups; BTOP grouping by real read name; the optional trace column; rejection of a wrong `-outfmt`; `OUTFMT` carrying no `delim=` and appearing verbatim in `--help`; the unparsable-file diagnosis naming `delim=\t` on BLAST's real literal-`\t` output and a missing `-outfmt` on its pairwise report, while a file of reads below `-r` is not flagged; trace counts and identity; read extraction from plain and gzipped FASTQ |
+| `test_layout_and_output.py` | `layout`, `stats`, `pipeline` end-to-end | page splitting across one, two and four pages; lanes never overlapping; a contig-joining read drawn on both contigs; overflow instead of a crash when lanes run out; coverage counting matched bases only; class fractions summing to 100; a full run writing a valid PDF and a uniform-width TSV; a run against GenBank; `-e` writing a populated list plus sequences; exit code 2 for a total accession mismatch; exit code 2 and no PDF, rather than an empty map, for an empty BTOP file and for one written with `delim=\t` |
 
 **Not directly imported by any test:** `cli.py`, `__main__.py`, `browser/server.py`, `browser/region.py`, `browser/export.py`. Exercised only indirectly through `pipeline.run`: `report.py`, `extract.py`, all of `render/`, `browser/store.py`, `inputs/genbank.py`.
 

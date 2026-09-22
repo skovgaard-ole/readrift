@@ -120,6 +120,14 @@ def analyse(params: Params) -> Analysis:
         f"below --min-read-length: {btop_stats.short_reads:,}"
     )
 
+    # A file with no usable line -- a wrong -outfmt, or the wrong file -- used to
+    # finish with exit 0 and an empty map: the accession check below never sees
+    # an accession, so it has nothing to fail on.
+    if btop_stats.nothing_parsed:
+        explanation = btop_stats.explain_nothing_parsed(params.btop_file)
+        print("\nERROR: " + explanation.replace("\n", "\n       ") + "\n")
+        raise AnalysisFailed(2)
+
     # A total accession mismatch between the BTOP file and the reference is the
     # commonest way to get an empty result, and the Perl gave no hint that it
     # had happened (finding B11).

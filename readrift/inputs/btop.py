@@ -1,8 +1,13 @@
-"""Streaming reader for BLAST BTOP tabular output.
+r"""Streaming reader for BLAST BTOP tabular output.
 
-Expected ``-outfmt``::
+Expected ``-outfmt`` -- :data:`OUTFMT`::
 
-    6 delim=<TAB> qseqid sframe qstart qend sstart send qlen sseqid btop
+    6 qseqid sframe qstart qend sstart send qlen sseqid btop
+
+Columns are split on tab and nothing else.  Tab is BLAST's default separator for
+format 6, so the string carries no ``delim=``; and it must not, because BLAST
+does not interpret ``delim=\t`` -- it writes the two characters ``\`` ``t``
+between columns (checked against BLAST+ 2.13.0), and every line then fails.
 
 The final ``btop`` column is optional -- the tool's own usage text says so, and
 the Perl tolerated it by accident (it only ever indexed columns 0..8 and never
@@ -20,6 +25,10 @@ from pathlib import Path
 from typing import IO
 
 from readrift.models import Hit
+
+#: The ``-outfmt`` this reader is written for.  Stated once, so ``--help`` and
+#: the error for a file that does not match it print the same string.
+OUTFMT = "6 qseqid sframe qstart qend sstart send qlen sseqid btop"
 
 #: Number of columns before the optional trace string.
 _MIN_COLUMNS = 8
@@ -47,10 +56,55 @@ class BtopStats:
 
     order_check_complete: bool = True
 
-    def note_malformed(self, lineno: int, why: str) -> None:
+    first_malformed: str = ""
+    """The text of the first rejected line, kept to say *why* nothing parsed."""
+
+    def note_malformed(self, lineno: int, why: str, text: str = "") -> None:
         self.malformed += 1
+        if not self.first_malformed:
+            self.first_malformed = text.rstrip("\r\n")[:200]
         if len(self.malformed_examples) < 5:
             self.malformed_examples.append(f"line {lineno}: {why}")
+
+    @property
+    def nothing_parsed(self) -> bool:
+        """The file held no line this reader could use -- or no line at all.
+
+        A line dropped by ``--min-read-length`` *was* parsed, so a file of
+        short reads is not this case.
+        """
+        return self.malformed == self.lines
+
+    def explain_nothing_parsed(self, path: str | Path) -> str:
+        """Why a file yielded nothing, and the command that makes one that will."""
+        if not self.lines:
+            what = (
+                f"{path} contains no alignment lines. BLAST writes an empty file "
+                f"when no read aligned: check that -db names the database built "
+                f"from this reference."
+            )
+        else:
+            what = f"none of the {self.lines:,} line(s) in {path} is a BTOP record."
+            first = self.first_malformed
+            if "\\t" in first:
+                what += (
+                    "\nIts columns are separated by the two characters \\t, not by "
+                    "a tab: the -outfmt string contained delim=\\t, which BLAST "
+                    "writes literally. Leave delim= out -- tab is already BLAST's "
+                    "separator for format 6."
+                )
+            elif first.startswith("BLAST"):
+                what += (
+                    "\nThis is BLAST's default pairwise report, not a table: "
+                    "blastn was run without -outfmt."
+                )
+            elif self.malformed_examples:
+                what += f"\nFirst: {self.malformed_examples[0]}"
+        return (
+            f"{what}\n"
+            f"ReadRift reads the table NCBI BLAST+ writes; make it with\n"
+            f'  blastn -db <database> -query reads.fa -out reads.btop -outfmt "{OUTFMT}"'
+        )
 
     def warnings(self) -> list[str]:
         notes: list[str] = []
@@ -134,7 +188,7 @@ def iter_read_groups(
             try:
                 hit = parse_line(line)
             except ValueError as exc:
-                st.note_malformed(lineno, str(exc))
+                st.note_malformed(lineno, str(exc), line)
                 continue
 
             if hit.qlen < min_read_length:

@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 
+import pytest
+
 from readrift import layout as layout_module
 from readrift import stats as stats_module
 from readrift.classify import ClassifyStats, classify_stream
@@ -198,3 +200,27 @@ def test_unknown_accessions_are_reported_not_silent(
         replace(params, btop_file=str(bad), out=str(fixture_dir / "bad_out"))
     )
     assert exit_code == 2
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        pytest.param("", id="empty file"),
+        pytest.param(
+            "someread\\t1\\t10\\t2010\\t1000\\t3000\\t5000\\tctgA\\t2000\n",
+            id="delim=\\t written literally",
+        ),
+    ],
+)
+def test_unparsable_btop_is_an_error_not_an_empty_map(
+    params: Params, fixture_dir: Path, content: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A file with no usable line used to finish with exit 0 and an empty PDF."""
+    bad = fixture_dir / "unparsable.btop"
+    bad.write_text(content, encoding="utf-8")
+    exit_code = run(
+        replace(params, btop_file=str(bad), out=str(fixture_dir / "unparsable_out"))
+    )
+    assert exit_code == 2
+    assert not (fixture_dir / "unparsable_out.pdf").exists()
+    assert "blastn" in capsys.readouterr().out

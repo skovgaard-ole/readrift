@@ -11,6 +11,12 @@
 *.gz
 olesdata/
 
+# ...except the bundled example (see examples/README.md). Named file by file,
+# not `!examples/`, so that anything a run writes into examples/ with -o stays
+# ignored. A '!' line re-includes only if it comes after the rule it overrides.
+!/examples/AP027148.gb.gz
+!/examples/DRR325755_20x.btop.gz
+
 # --- Generated output --------------------------------------------------
 *.pdf
 *.readriftdb.npz

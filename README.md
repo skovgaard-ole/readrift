@@ -59,8 +59,8 @@ pip install -e .
 ```
 
 Any of them gives you a `readrift` command on your PATH. `python -m readrift`
-works identically and needs no install beyond the dependencies, so both spellings
-appear below.
+does the same, so both spellings appear below. Without the install step,
+`python -m readrift` only works from inside the `readrift` folder.
 
 To run the checks as well, install the development extras and use them:
 
@@ -91,6 +91,20 @@ or a package manager:
 
 Check it with `blastn -version`. ReadRift's input format was verified against
 BLAST+ 2.13.0.
+
+## Try it
+
+The repository includes a real dataset: a 20× slice of an Oxford Nanopore run,
+already aligned, so you can see ReadRift work before installing BLAST. From the
+`readrift` folder:
+
+```bash
+python -m readrift examples/AP027148.gb.gz examples/DRR325755_20x.btop.gz -x 20 --identity
+```
+
+That takes about a minute and writes `DRR325755_20x.pdf`. See
+[`examples/README.md`](examples/README.md) for what the run should report,
+exactly how the data were made, and whose data they are.
 
 ## Use
 
@@ -146,17 +160,18 @@ causing genomic instability.
 
 ### Sample data
 
-**A clone contains no data**, only source. The alignment used in the examples
-above is ~985 MB, an order of magnitude past what a git remote accepts, and the
-reference is a public accession — neither belongs in this history. Both are
-fetched rather than cloned:
+The repository carries the reference and the first 20× of the alignment in
+[`examples/`](examples/README.md). The full alignment used in the examples above
+is ~985 MB, an order of magnitude more than a git repository should hold, so the
+complete data are fetched rather than cloned:
 
 | | |
 |---|---|
 | Reference | the *Methylocystis iwaonis* SS37A-Re genome in one GenBank file, `AP027148.gb`: chromosome [`AP027142`](https://www.ncbi.nlm.nih.gov/nuccore/AP027142) and six plasmids, `AP027143`–`AP027148`, plus four short gene records of the same organism (16S rRNA, *pmoA*, *mmoX*, *mxaF*). `AP027148` on its own is only the smallest plasmid. |
 | Reads | Sequence Read Archive run `DRR325755`. `fasterq-dump DRR325755` from the SRA Toolkit gives FASTQ, which BLAST needs converted to FASTA. |
 
-The data are from Kaise et al. (2023), *Int J Syst Evol Microbiol* 73(6);
+The data are from Kaise et al. (2023), *Int J Syst Evol Microbiol* 73(6),
+[doi:10.1099/ijsem.0.005925](https://doi.org/10.1099/ijsem.0.005925);
 BioProject [PRJDB12481](https://www.ncbi.nlm.nih.gov/bioproject/PRJDB12481).
 
 Then run the two steps above. Aligning with BLAST is the slow step, not ReadRift.

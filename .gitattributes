@@ -12,3 +12,4 @@
 
 *.npz  binary
 *.pdf  binary
+*.gz   binary

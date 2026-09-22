@@ -633,7 +633,7 @@ Exit codes: `0` success, `1` PDF not writable / browser startup failure, `2` the
 
 The same two commands are what `.github/workflows/ci.yml` runs on every push and pull request — Linux, macOS and Windows on Python 3.10 and 3.13, plus 3.11 and 3.12 on Linux. The Linux jobs have no `DISPLAY` and no Ghostscript, so invariant 12 (§14) is tested there rather than only asserted.
 
-Everything is generated into `tmp_path` — nothing is checked in — so the expected classification of every read can be derived by hand from §5 and stated in one place.
+There are two kinds of test data. The **synthetic fixtures** are generated into `tmp_path`, so the expected classification of every read can be derived by hand from §5 and stated in one place. The **bundled example** (`examples/`, §15) is real data checked into the repository. Its expected results are what the classifier says, pinned after checking them read by read against a `-x 20` run over the original full alignment.
 
 **Fixtures** (`conftest.py`): `fixture_dir` builds `ref.fa`, `ref.gb`, `reads.btop`, `reads.fastq`, `reads.fastq.gz`; `params` returns a `Params` scaled to the fixture's coordinates. Two contigs — `ctgA` 40 kb, `ctgB` 12 kb — with the FASTA sequence deliberately containing IUPAC ambiguity codes and the GenBank version carrying full metadata plus a feature of every annotation group. The 19 BTOP rows cover: undivided forward and reverse, a short-divided deletion, a short-divided read with an inverted piece, a long-divided pair 26 kb apart, a contig join, a circular join spanning all of `ctgB`, a read below the length cut, an ONT UUID name, a name containing a parenthesis, a read on an unknown accession, and a three-HSP read where two compete for the same read bases. `EXPECTED` states the class, junction and inversion flag for each.
 
@@ -642,6 +642,7 @@ Everything is generated into `tmp_path` — nothing is checked in — so the exp
 | `test_classify.py` | `classify`, `inputs.btop`, `inputs.reference`, `labels` | the full read → (class, junction, inverted) map; dropped reads and the unknown-accession report; class totals (4 / 2 / 4, one inverted); names never rewritten and unmatched labels reported; unique labels; competing HSPs dropped; `select_non_overlapping` matching a naive per-base implementation over 2 000 random cases; **the fold-back rule** — the real 9-HSP artefact read collapsing to one `UNDIVIDED` hit, `--keep-fold-back` restoring all nine, and the three shapes it must *not* touch (a genuine inversion over fresh reference, a same-strand tandem duplication, a breakpoint sharing less than half its span with an inverted repeat); GenBank and FASTA classifying identically |
 | `test_inputs.py` | `inputs.{fasta,genbank,reference,btop,reads}`, `btop_trace` | FASTA lengths and ambiguity codes; four accession-header forms; GenBank lengths, metadata, versioned-accession resolution and feature groups; BTOP grouping by real read name; the optional trace column; rejection of a wrong `-outfmt`; `OUTFMT` carrying no `delim=` and appearing verbatim in `--help`; the unparsable-file diagnosis naming `delim=\t` on BLAST's real literal-`\t` output and a missing `-outfmt` on its pairwise report, while a file of reads below `-r` is not flagged; trace counts and identity; read extraction from plain and gzipped FASTQ |
 | `test_layout_and_output.py` | `layout`, `stats`, `pipeline` end-to-end | page splitting across one, two and four pages; lanes never overlapping; a contig-joining read drawn on both contigs; overflow instead of a crash when lanes run out; coverage counting matched bases only; class fractions summing to 100; a full run writing a valid PDF and a uniform-width TSV; a run against GenBank; `-e` writing a populated list plus sequences; exit code 2 for a total accession mismatch; exit code 2 and no PDF, rather than an empty map, for an empty BTOP file and for one written with `delim=\t` |
+| `test_example.py` | the whole analysis on `examples/`, in one module-scoped run (~10 s, most of it parsing traces for `--identity`) | real Nanopore data at `-x 20`: 3,120 reads split 2,663 / 340 / 117, 12 inverted, 19.6205× mean coverage, N50 34,922, 318 events, 156 fold-back reads, and a median identity of 0.940 from the `btop` trace column. A failure means the science changed: it needs a `CHANGES.md` entry and a person's review of the new numbers, not just an edit to the test. Skipped if `examples/` is absent |
 
 **Not directly imported by any test:** `cli.py`, `__main__.py`, `browser/server.py`, `browser/region.py`, `browser/export.py`. Exercised only indirectly through `pipeline.run`: `report.py`, `extract.py`, all of `render/`, `browser/store.py`, `inputs/genbank.py`.
 
@@ -681,16 +682,22 @@ These are the rules that keep the printed map, the browser and the exports agree
 | `LICENSE` | MIT |
 | `.github/workflows/ci.yml` | CI: `pytest` + `ruff` across three platforms and four Python versions (§13) |
 | `legacy/read_print_23.pl` | the original Perl program, kept as the reference the port was audited against — `CHANGES.md` cites line numbers in it. Unmaintained and never run; `legacy/README.md` says so |
-| `.gitignore` | keeps the sample data, generated output, and per-machine files (`.claude/settings.local.json`) out of version control |
-| `.gitattributes` | `* text=auto` — LF in the repository, native on checkout |
-| `AP027148.gb` | real multi-`LOCUS` GenBank reference — the sample input |
-| `DRR325755.btop` | real BLAST BTOP alignment of run DRR325755 against it (8 columns, no trace) |
-| `DRR325755.pdf`, `DRR325755.readriftdb.npz` | generated output from a run over the sample data |
+| `.gitignore` | keeps the sample data, generated output, and per-machine files (`.claude/settings.local.json`) out of version control, with two named exceptions for the bundled example |
+| `.gitattributes` | `* text=auto` — LF in the repository, native on checkout; `*.gz`, `*.npz` and `*.pdf` binary |
+| `examples/AP027148.gb.gz` | **tracked.** The *M. iwaonis* SS37A-Re reference: `AP027142`–`AP027148` plus four short gene records, 2.8 MB |
+| `examples/DRR325755_20x.btop.gz` | **tracked.** Reads `DRR325755.1`–`.7435`, the reads a `-x 20` run consumes, re-aligned with the documented `blastn` command on BLAST+ 2.13.0: 448,764 lines, 9 columns, LF, deterministic gzip, 23.4 MB. Classifies identically, read for read, to the original alignment |
+| `examples/README.md` | how to run the example, what it should report, exactly how it was made, and the data's credit. The data are INSDC data, not MIT |
+| `AP027148.gb` | the same reference, uncompressed — untracked |
+| `DRR325755_a.btop` | the full original alignment of run DRR325755, ~985 MB, 8 columns, no trace — untracked |
+| `DRR325755.fasta.gz` | the reads of run DRR325755, 1.2 GB — untracked; the source of the example's 20× subset |
+| `DRR325755.pdf`, `DRR325755.readriftdb.npz` | generated output from a run over the sample data — untracked |
 
 **Not in version control.** The sample data and everything generated from it are
 ignored: `*.btop`, `*.gb`, `*.fa`/`*.fasta`/`*.fastq`, `*.gz`, `*.pdf`,
 `*.readriftdb.npz`, `*_Analysis.tsv`, `extract-reads-list_*`, plus the usual
-Python and editor caches. `DRR325755.btop` is ~985 MB — an order of magnitude
-past what a git remote will accept — and `AP027148.gb` is a public accession, so
-neither belongs in history. A clone is source only; point it at your own inputs.
-Track one anyway with `git add -f <path>` if you need to.
+Python and editor caches. The full alignment is ~985 MB, an order of magnitude
+past what a git remote will accept. The one exception is the bundled example,
+re-included by two `!` rules that name its two data files individually, so
+anything a run writes into `examples/` stays ignored. The example lives in git
+itself, not Git LFS: GitHub's release archives, which Zenodo stores, leave LFS
+files out by default.

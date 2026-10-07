@@ -49,7 +49,8 @@ desktop.ini
 # Per-machine tool permissions, and personal scratch notes. CLAUDE.md is
 # tracked (it is project instructions); this file is one user's settings.
 .claude/settings.local.json
-Lars_Hints.txt
+Lars_Hints*.txt
+*_notes.txt
 
 # To keep an ignored file anyway (e.g. a small reference you want tracked):
 #   git add -f AP027148.gb

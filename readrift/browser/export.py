@@ -273,6 +273,11 @@ def _marker_polyline(
             scale=theme.INVERSION_ARROW_SCALE,
             rotation=theme.INVERSION_ARROW_ROTATION,
         )
+        # Put the tip, not the tail, at the anchor -- the inverted piece's left
+        # end -- nudged up and left so the arrow points at the piece without
+        # covering it, as the printed map's placement in layout.py does.
+        tip_x, tip_y = points[1]
+        points = [(px - tip_x - 3.0, py - tip_y + 3.0) for px, py in points]
     else:
         points = theme.arrow_points(style, _ARROW_LINE_WIDTH)
 

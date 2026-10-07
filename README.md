@@ -257,11 +257,13 @@ Reads carry the same arrow vocabulary as the printed map:
 | single chevron | the read runs on past here — pointing the way it runs |
 | double chevron | it continues onto another contig (`Contig_Join`) |
 | chevron + ring | it bridges the origin of a circular replicon (`Circle`) |
-| chevron against the run | that piece is inverted |
+| red diagonal arrow | the thick red piece it points at is inverted — a short-distance inversion, possibly phase variation. Long-distance inversions are drawn as ordinary pieces, as in the PDF |
 | short bar | a junction inside a divided read |
 
 Arrowheads are hidden when the lanes are too thin to read them; zoom in or
-narrow the class filter to bring them back.
+narrow the class filter to bring them back. The inversion arrow is the
+exception: it is drawn at every zoom, beside the piece rather than on it, so
+even a very short inverted piece stays visible.
 
 ## Output
 
@@ -274,7 +276,7 @@ narrow the class filter to bring them back.
 | `extract-reads-list_<contig>_<start>_<end>.fastq` / `.fasta` | with `-e` — the sequences |
 
 The PDF is: front page (parameters, legend, project information, statistics,
-provenance) → figures → the read maps, one contig at a time.
+provenance) → figures → the ReadRift pages, one contig at a time.
 
 ## Options
 

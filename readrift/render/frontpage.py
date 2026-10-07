@@ -119,7 +119,7 @@ def render_frontpage(
     ax.set_ylim(0, height)
     ax.set_axis_off()
 
-    ax.text(_LEFT, height - 52, f"Read map of {sample}", fontsize=25,
+    ax.text(_LEFT, height - 52, f"ReadRift of {sample}", fontsize=25,
             family=theme.SANS, color=theme.TITLE, ha="left", va="baseline")
     ax.text(_LEFT, height - 72, "Long sequence reads mapped by BLAST, classified by "
             "how their alignment divides", fontsize=11, family=theme.SANS,

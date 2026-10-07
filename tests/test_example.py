@@ -68,3 +68,31 @@ def test_example_identity_comes_from_the_trace_column(analysis: Analysis) -> Non
     identities = list(analysis.stats.identities)
     assert len(identities) == 3_120
     assert statistics.median(identities) == pytest.approx(0.940, abs=0.001)
+
+
+def test_browser_emphasises_only_short_distance_inversions(
+    analysis: Analysis, tmp_path: Path
+) -> None:
+    """Thick red and an arrow mark a short-distance inversion (phase variation);
+    a long-distance one is drawn as plain pieces, as on the printed map."""
+    from readrift.browser.region import build_region
+    from readrift.browser.store import BrowserStore, build_store
+
+    params = parse_args([str(REFERENCE), str(ALIGNMENT), "-x", "20", "--identity"])
+    path = build_store(
+        tmp_path / "example.readriftdb.npz",
+        analysis.reference, analysis.reads, analysis.stats, params,
+    )
+    store = BrowserStore.open(path)
+    contig = analysis.reference.contigs[0]
+    view = build_region(store, contig.name, 0, contig.length, limit=10**6)
+
+    long_inverted = [r for r in view.reads if r.cls == "long_divided" and r.inverted]
+    short_inverted = [r for r in view.reads if r.cls == "short_divided" and r.inverted]
+    assert long_inverted, "the example should hold a long-distance inversion"
+    for read in long_inverted:
+        assert not any(s.inverted for s in read.segments)
+        assert not any(m.style == "inversion_arrow" for m in read.markers)
+    for read in short_inverted:
+        assert any(s.inverted for s in read.segments)
+        assert any(m.style == "inversion_arrow" for m in read.markers)

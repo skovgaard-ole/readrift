@@ -128,11 +128,16 @@ function commas(n) {
   return Math.round(n).toLocaleString('en-US');
 }
 
-function shortBp(n) {
+// With a step (ruler ticks), every label gets enough decimals to resolve that
+// step, so 1,130,000 and 1,135,000 read 1.130 and 1.135 Mb, never 1.13 twice.
+function shortBp(n, step) {
   const v = Math.abs(n);
-  if (v >= 1e6) return (n / 1e6).toFixed(v % 1e6 === 0 ? 0 : 2) + ' Mb';
-  if (v >= 1e3) return (n / 1e3).toFixed(v % 1e3 === 0 ? 0 : 1) + ' kb';
-  return commas(n) + ' bp';
+  const unit = v >= 1e6 ? 1e6 : (v >= 1e3 ? 1e3 : 1);
+  if (unit === 1) return commas(n) + ' bp';
+  const digits = step === undefined
+    ? (v % unit === 0 ? 0 : (unit === 1e6 ? 2 : 1))
+    : Math.max(0, Math.ceil(-Math.log10(step / unit) - 1e-9));
+  return (n / unit).toFixed(digits) + (unit === 1e6 ? ' Mb' : ' kb');
 }
 
 function clamp(v, lo, hi) {
@@ -255,7 +260,7 @@ function drawRuler(ctx, width, palette) {
     const x = Math.round(xOf(p)) + 0.5;
     ctx.moveTo(x, axis);
     ctx.lineTo(x, axis + 9);
-    const label = step >= 1000 ? shortBp(p) : commas(p);
+    const label = step >= 1000 ? shortBp(p, step) : commas(p);
     ctx.textAlign = x < 34 ? 'left' : (x > width - 34 ? 'right' : 'center');
     ctx.fillText(label, x, AXIS_Y + 24);
   }
@@ -605,7 +610,9 @@ function drawStrand(strand, layout) {
   ctx.stroke(inversionPath);
 
   // Arrowheads, junction ticks and circular-join rings, on top of the lines.
-  drawMarkers(reads, yOf, layout, arrowSize, chevronPaths, tickPaths, rings, palette);
+  const inversionArrows = new Path2D();
+  drawMarkers(reads, yOf, layout, arrowSize, chevronPaths, tickPaths, rings, palette,
+              inversionArrows);
 
   ctx.lineWidth = markerStroke;
   for (const [colour, path] of tickPaths) {
@@ -632,6 +639,15 @@ function drawStrand(strand, layout) {
       ctx.stroke();
     }
   }
+
+  // Inversion arrows last, over everything: a pale halo first so a red arrow
+  // stays legible where it crosses the lanes of other reads.
+  ctx.strokeStyle = palette.surface;
+  ctx.lineWidth = 4;
+  ctx.stroke(inversionArrows);
+  ctx.strokeStyle = palette.inversion;
+  ctx.lineWidth = 2;
+  ctx.stroke(inversionArrows);
   ctx.lineCap = 'butt';
 
   if (joinMarks.length <= 60 && layout.laneH >= 5) {
@@ -660,8 +676,31 @@ function chevron(path, x, y, dir, size) {
   path.lineTo(x - dir * size, y + h);
 }
 
+// The printed map's inversion indicator: a shafted arrow at -30 degrees, coming
+// in from above-left with its tip just short of the inverted piece's left end
+// (render/theme.py INVERSION_ARROW_*, placed by layout.py).  It points at the
+// piece rather than sitting on it, so even a piece a pixel or two wide stays
+// visible.  Sized in pixels, not lanes, so it stays readable when lanes are thin.
+const INVERSION_ANGLE = Math.PI / 6;
+function inversionArrow(path, x, y, laneH) {
+  const length = clamp(laneH * 2.4, 14, 24);
+  const head = clamp(length * 0.4, 6, 8);
+  const ux = Math.cos(INVERSION_ANGLE);
+  const uy = Math.sin(INVERSION_ANGLE);   // canvas y grows downwards
+  const tipX = x - 1.5;
+  const tipY = y - Math.max(1.5, laneH * 0.4);
+  path.moveTo(tipX - ux * length, tipY - uy * length);
+  path.lineTo(tipX, tipY);
+  // The head: two barbs, each 28 degrees off the shaft.
+  for (const side of [-1, 1]) {
+    const a = INVERSION_ANGLE + Math.PI + side * 0.49;
+    path.moveTo(tipX, tipY);
+    path.lineTo(tipX + Math.cos(a) * head, tipY + Math.sin(a) * head);
+  }
+}
+
 function drawMarkers(reads, yOf, layout, size, chevronPaths, tickPaths, rings,
-                     palette) {
+                     palette, inversionArrows) {
   const width = plotWidth();
   const showArrows = layout.laneH >= ARROW_MIN_LANE;
 
@@ -673,7 +712,7 @@ function drawMarkers(reads, yOf, layout, size, chevronPaths, tickPaths, rings,
 
   const emit = (style, dir, x, y, colour) => {
     if (style === 'inversion_arrow') {
-      chevron(pathFor(chevronPaths, palette.inversion), x, y, dir, size);
+      inversionArrow(inversionArrows, x, y, layout.laneH);
       return;
     }
     const path = pathFor(chevronPaths, colour);
@@ -706,7 +745,9 @@ function drawMarkers(reads, yOf, layout, size, chevronPaths, tickPaths, rings,
         path.lineTo(x, y + h);
         continue;
       }
-      if (showArrows) emit(style, dir, x, y, colour);
+      // An inversion is the one mark worth seeing at every zoom, and it sits
+      // beside the line rather than on it, so it does not need a tall lane.
+      if (showArrows || style === 'inversion_arrow') emit(style, dir, x, y, colour);
     }
 
     // "This read carries on past the edge of what you are looking at" -- the
@@ -1160,7 +1201,13 @@ function arrowGlyph(style, colour) {
     body = shaft(2, 14) + chev(14, 1) +
       '<circle cx="21" cy="8" r="3"' + stroke;
   } else if (style === 'arrow_rev') body = shaft(9, 24) + chev(9, -1);
-  else if (style === 'inversion_arrow') body = shaft(9, 24) + chev(9, -1);
+  else if (style === 'inversion_arrow') {
+    // The diagonal arrow pointing at the left end of a short red piece.
+    body = '<line x1="15" y1="13" x2="24" y2="13" stroke="' + colour +
+      '" stroke-width="3"/>' +
+      '<polyline points="2,3 13,9.5"' + stroke +
+      '<polyline points="8.6,9.9 13,9.5 11.1,5.4"' + stroke;
+  }
   else if (style === 'tick') body = shaft(2, 24) + '<line x1="13" y1="2.5" x2="13" y2="13.5"' + stroke;
   else body = shaft(2, 17) + chev(17, 1);
 

@@ -1,4 +1,4 @@
-"""The read-map pages.
+"""The ReadRift pages.
 
 One figure per contig page, in the original poster format: the page is
 ``10750 x 7600`` points (times ``--page-scale``) and the axes fill it exactly,
@@ -347,7 +347,7 @@ def render_contig(
         ax.text(
             0.0,
             0.5 * params.page_height - 70.0,
-            f"Read map of {sample} on {layout.contig.name}."
+            f"ReadRift of {sample} on {layout.contig.name}."
             f"      Page {page + 1} of {layout.pages}."
             f"      Bases {theme.thousands(first_base)} to {theme.thousands(last_base)}.",
             fontsize=theme.TITLE_FONT_SIZE,

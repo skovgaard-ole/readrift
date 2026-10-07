@@ -291,8 +291,8 @@ def figure_coverage(stats: Stats, reference: Reference) -> Figure:
         "Coverage along the reference",
         "Aligned depth in "
         + (f"the {len(shown)} largest contigs. " if hidden else "each contig. ")
-        + "Troughs are where reads stop matching -- the same places the read map "
-        "shows divided reads. Every panel shares one depth scale, so they can be "
+        + "Troughs are where reads stop matching -- the same places the ReadRift "
+        "pages show divided reads. Every panel shares one depth scale, so they can be "
         "read against each other."
         + (f" {hidden} shorter contig(s) not shown." if hidden else ""),
     )
@@ -554,7 +554,7 @@ def figure_event_map(stats: Stats, reference: Reference) -> Figure:
         fig,
         "Structural events",
         "Every junction, inversion breakpoint and contig or circular join, on "
-        "one page. This is the read map's main result without the reads.",
+        "one page. This is ReadRift's main result without the reads.",
     )
 
     events = stats.events()

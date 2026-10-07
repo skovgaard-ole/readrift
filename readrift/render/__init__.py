@@ -53,7 +53,7 @@ def write_pdf(
     pages = 0
     with PdfPages(path) as pdf:
         info = pdf.infodict()
-        info["Title"] = f"Read map of {sample}"
+        info["Title"] = f"ReadRift of {sample}"
         info["Subject"] = (
             f"{stats.total_reads:,} long reads mapped onto "
             f"{len(reference.contigs)} contig(s), {stats.reference_length:,} bp"

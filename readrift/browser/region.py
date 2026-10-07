@@ -378,16 +378,14 @@ def _markers_for(
     if contig_length - packed.end <= CONTIG_EDGE_TOLERANCE:
         markers.append(arrow(packed.end, +1))
 
-    # A piece running against the rest of the read.  Anchored at the end the
-    # piece *starts* from in its own direction, so the chevron points the way
-    # that piece runs -- against its neighbours, which is the whole signal.
+    # A piece running against the rest of the read.  As on the printed map
+    # (layout.py), the marker is the piece's left end: the arrow comes in
+    # diagonally from above-left and stops short of it, so it points at the
+    # inverted piece without covering it -- a short inversion may be only a
+    # few pixels wide.
     for segment in packed.segments:
-        if not segment.inverted:
-            continue
-        if segment.strand > 0:
-            markers.append(PackedMarker(segment.end, "inversion_arrow", +1))
-        else:
-            markers.append(PackedMarker(segment.start, "inversion_arrow", -1))
+        if segment.inverted:
+            markers.append(PackedMarker(segment.start, "inversion_arrow", +1))
 
     # Junctions inside a short-divided read, drawn as several pieces on one lane.
     if packed.cls == "short_divided" and len(packed.segments) > 1:
@@ -557,13 +555,23 @@ def build_region(
         # which is the same reference `ReadGroup.inverted` uses -- so the
         # segments drawn in the inversion colour are exactly the ones that made
         # the read count as inverted.
+        #
+        # Only a short-distance inversion is drawn as one, though: thick, red
+        # and arrowed.  It is the mark of phase variation (Klemm 1986, PMID
+        # 2874022), typically a few hundred bases that would vanish otherwise.
+        # A long-divided read's pieces are separate lines anyway, already
+        # above and below the axis by strand, and the printed map lays them
+        # out one piece at a time, so it never marks them either.  The read
+        # still counts as inverted -- badge, tooltip and the inverted-only
+        # filter go by `is_inverted`, not by its segments.
         strand = int(read_strand[read_id])
+        emphasise = cls != "long_divided"
         segments = [
             PackedSegment(
                 start=int(hit_slow[h]),
                 end=int(hit_shigh[h]),
                 strand=int(hit_strand[h]),
-                inverted=int(hit_strand[h]) != strand,
+                inverted=emphasise and int(hit_strand[h]) != strand,
             )
             for h in own.tolist()
         ]

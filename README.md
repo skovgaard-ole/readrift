@@ -1,6 +1,7 @@
 # ReadRift
 
 [![CI](https://github.com/skovgaard-ole/readrift/actions/workflows/ci.yml/badge.svg)](https://github.com/skovgaard-ole/readrift/actions/workflows/ci.yml)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23214318.svg)](https://doi.org/10.5281/zenodo.23214318)
 
 Visualise long sequence reads (Oxford Nanopore, PacBio) mapped onto a reference
 by BLAST, classified by how their alignment divides.
@@ -344,6 +345,15 @@ the corresponding slice of the poster.
 The classification algorithm is documented step by step in
 `code_structure.md` §5 and implemented in `classify.py`. It is unchanged from
 the Perl — only its implementation is different.
+
+## Citing
+
+If you use ReadRift, please cite the version you used. Each release is
+archived on Zenodo with its own DOI; version 1.0.0 is
+[10.5281/zenodo.23214319](https://doi.org/10.5281/zenodo.23214319). The DOI
+[10.5281/zenodo.23214318](https://doi.org/10.5281/zenodo.23214318) always
+resolves to the latest version. GitHub's "Cite this repository" button gives
+the reference in APA and BibTeX.
 
 ## Licence
 
